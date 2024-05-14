@@ -58,3 +58,11 @@ pip install -e ./cs336-basics/ -e ./cs336-data/'[test]'
 ``` sh
 conda activate cs336_data
 ```
+
+
+# Download a sample WARC file.
+$ wget https://data.commoncrawl.org/crawl-data/CC-MAIN-2018-17/segments/1524125937193.1/
+warc/CC-MAIN-20180420081400-20180420101400-00118.warc.gz
+# Download its corresponding WET file.
+$ wget https://data.commoncrawl.org/crawl-data/CC-MAIN-2018-17/segments/1524125937193.1/
+wet/CC-MAIN-20180420081400-20180420101400-00118.warc.wet.gz

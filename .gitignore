@@ -1,5 +1,6 @@
 CC-MAIN-2023-50/
 *.bin
+data/
 
 nav
 tags
