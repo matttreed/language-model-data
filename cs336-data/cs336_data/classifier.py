@@ -7,6 +7,8 @@ from cs336_data.processing import extract_text_from_html_bytes, is_gopher_qualit
 from tqdm import tqdm
 import fasttext
 
+WARC_DIR = '/home/shared/CC-MAIN-2023-50-warc-filtered'
+
 def sample_urls(file_path, sample_size):
     """
     Randomly sample URLs from a gzip-compressed file using reservoir sampling.
@@ -53,9 +55,18 @@ def get_docs_from_warc(warc_filepath, max_len=None, quality_filter=False):
     return docs
 
 
-def create_fasttext_dataset(pos_warc_filepath, neg_warc_filepath, pos_label, neg_label, train_filepath, valid_filepath):
-    pos_docs = get_docs_from_warc(pos_warc_filepath, quality_filter=False)
-    neg_docs = get_docs_from_warc(neg_warc_filepath, max_len=len(pos_docs), quality_filter=False)
+def create_fasttext_dataset(pos_warc_filepaths, neg_warc_filepaths, pos_label, neg_label, train_filepath, valid_filepath):
+    pos_docs = []
+    for filepath in pos_warc_filepaths:
+        pos_docs += get_docs_from_warc(filepath, quality_filter=True)
+
+    neg_docs = []
+    for filepath in neg_warc_filepaths:
+        neg_docs += get_docs_from_warc(filepath, quality_filter=True)
+        if len(neg_docs) >= len(pos_docs):
+            break
+
+    neg_docs = neg_docs[:len(pos_docs)]
 
     assert len(pos_docs) == len(neg_docs)
 
@@ -86,7 +97,14 @@ def train_model(train_filepath, valid_filepath, save_path):
     print(f"Number of examples: {result[0]}")
     print(f"Precision at 1: {result[1]}")
     print(f"Recall at 1: {result[2]}")
-    
+
+def get_warc_files(directory):
+    warc_files = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.endswith('.warc.filtered.gz'):
+                warc_files.append(os.path.join(root, file))
+    return warc_files
 
 
 if __name__ == "__main__":
@@ -116,7 +134,11 @@ if __name__ == "__main__":
     elif args.create_dataset:
         train_path = os.path.join(curr_dir, f'classifier/data.train')
         valid_path = os.path.join(curr_dir, f'classifier/data.valid')
-        create_fasttext_dataset(args.pos_warc_filepath, args.neg_warc_filepath, "__label__wiki", "__label__cc", train_path, valid_path)
+
+        pos_filepaths = get_warc_files("/home/c-mattreed/language-model-data/warcs")
+        neg_filepaths = get_warc_files(WARC_DIR)
+
+        create_fasttext_dataset(pos_filepaths, neg_filepaths, "__label__wiki", "__label__cc", train_path, valid_path)
     elif args.train_model:
         train_path = os.path.join(curr_dir, f'classifier/data.train')
         valid_path = os.path.join(curr_dir, f'classifier/data.valid')

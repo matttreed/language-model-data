@@ -1,6 +1,6 @@
 from resiliparse.extract.html2text import extract_plain_text
 from resiliparse.parse.encoding import detect_encoding
-from cs336_data.common_crawl import sample_warc_records
+# from cs336_data.common_crawl import sample_warc_records
 import fasttext
 import re
 # from warcio.archiveiterator import ArchiveIterator

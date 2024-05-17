@@ -66,3 +66,9 @@ warc/CC-MAIN-20180420081400-20180420101400-00118.warc.gz
 # Download its corresponding WET file.
 $ wget https://data.commoncrawl.org/crawl-data/CC-MAIN-2018-17/segments/1524125937193.1/
 wet/CC-MAIN-20180420081400-20180420101400-00118.warc.wet.gz
+
+
+wget --timeout=5 \                                                            --tries=1 \
+-i cs336-data/cs336_data/classifier/100000_urls_1.txt \
+--warc-file=warcs/subsampled_warcs_1 \
+-O /dev/null
