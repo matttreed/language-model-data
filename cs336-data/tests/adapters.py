@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from cs336_data.processing import extract_text_from_html_bytes, identify_language, mask_emails, mask_ip_addresses, mask_phone_numbers, detect_toxic, detect_nsfw
+from cs336_data.processing import extract_text_from_html_bytes, identify_language, mask_emails, mask_ip_addresses, mask_phone_numbers, detect_toxic, detect_nsfw, is_gopher_quality, detect_quality, exact_dedup, minhash_dedup
 
 
 def run_extract_text_from_html_bytes(html_bytes: bytes) -> str | None:
@@ -36,17 +36,17 @@ def run_classify_toxic_speech(text: str) -> tuple[Any, float]:
 
 
 def run_classify_quality(text: str) -> tuple[Any, float]:
-    raise NotImplementedError
+    return detect_quality(text)
 
 
 def run_gopher_quality_filter(text: str) -> bool:
-    raise NotImplementedError
+    return is_gopher_quality(text)
 
 
 def run_exact_line_deduplication(
     input_files: list[os.PathLike], output_directory: os.PathLike
 ):
-    raise NotImplementedError
+    exact_dedup(input_files, output_directory)
 
 
 def run_minhash_deduplication(
@@ -57,4 +57,4 @@ def run_minhash_deduplication(
     jaccard_threshold: float,
     output_directory: os.PathLike,
 ):
-    raise NotImplementedError
+    minhash_dedup(input_files, num_hashes, num_bands, ngrams, jaccard_threshold, output_directory)
