@@ -37,7 +37,7 @@ def get_docs_from_warc(warc_filepath, max_len=None, quality_filter=False):
     num_rejects = 0
     with gzip.open(warc_filepath, 'rb') as stream:
         archive_iterator = ArchiveIterator(stream)
-        for record in archive_iterator:
+        for record in tqdm(archive_iterator):
             if max_len and len(docs) >= max_len:
                 break
 
@@ -55,40 +55,85 @@ def get_docs_from_warc(warc_filepath, max_len=None, quality_filter=False):
     return docs
 
 
-def create_fasttext_dataset(pos_warc_filepaths, neg_warc_filepaths, pos_label, neg_label, train_filepath, valid_filepath):
-    pos_docs = []
-    for filepath in pos_warc_filepaths:
-        pos_docs += get_docs_from_warc(filepath, quality_filter=True)
+# def create_fasttext_dataset(pos_warc_filepaths, neg_warc_filepaths, pos_label, neg_label, train_filepath, valid_filepath):
+#     pos_docs = []
+#     for filepath in pos_warc_filepaths:
+#         pos_docs += get_docs_from_warc(filepath, quality_filter=True)
+#         num_docs = len(pos_docs)
+#         print(f"iteration now have {num_docs} pos docs")
 
-    neg_docs = []
-    for filepath in neg_warc_filepaths:
-        neg_docs += get_docs_from_warc(filepath, quality_filter=True)
-        if len(neg_docs) >= len(pos_docs):
-            break
+#     neg_docs = []
+#     for filepath in neg_warc_filepaths:
+#         neg_docs += get_docs_from_warc(filepath, quality_filter=True, max_len=len(pos_docs) - len(neg_docs))
+#         num_docs = len(neg_docs)
+#         print(f"iteration now have {num_docs} neg docs")
+#         if len(neg_docs) >= len(pos_docs):
+#             break
 
-    neg_docs = neg_docs[:len(pos_docs)]
+#     neg_docs = neg_docs[:len(pos_docs)]
 
-    assert len(pos_docs) == len(neg_docs)
+#     assert len(pos_docs) == len(neg_docs)
 
-    split = len(pos_docs) * 3 // 4
-    pos_train = pos_docs[:split]
-    neg_train = neg_docs[:split]
-    pos_valid = pos_docs[split:]
-    neg_valid = neg_docs[split:]
+#     split = len(pos_docs) * 3 // 4
+#     pos_train = pos_docs[:split]
+#     neg_train = neg_docs[:split]
+#     pos_valid = pos_docs[split:]
+#     neg_valid = neg_docs[split:]
 
-    with open(train_filepath, "w") as f:
-        for pos, neg in tqdm(zip(pos_train, neg_train)):
-            pos_text = pos.replace("\n", " ")
-            neg_text = neg.replace("\n", " ")
-            f.write(f"{pos_label} {pos_text}\n")
-            f.write(f"{neg_label} {neg_text}\n")
+#     with open(train_filepath, "w") as f:
+#         for pos, neg in tqdm(zip(pos_train, neg_train)):
+#             pos_text = pos.replace("\n", " ")
+#             neg_text = neg.replace("\n", " ")
+#             f.write(f"{pos_label} {pos_text}\n")
+#             f.write(f"{neg_label} {neg_text}\n")
     
-    with open(valid_filepath, "w") as f:
-        for pos, neg in tqdm(zip(pos_valid, neg_valid)):
-            pos_text = pos.replace("\n", " ")
-            neg_text = neg.replace("\n", " ")
-            f.write(f"{pos_label} {pos_text}\n")
-            f.write(f"{neg_label} {neg_text}\n")
+#     with open(valid_filepath, "w") as f:
+#         for pos, neg in tqdm(zip(pos_valid, neg_valid)):
+#             pos_text = pos.replace("\n", " ")
+#             neg_text = neg.replace("\n", " ")
+#             f.write(f"{pos_label} {pos_text}\n")
+#             f.write(f"{neg_label} {neg_text}\n")
+
+def create_fasttext_dataset(pos_warc_filepaths, neg_warc_filepaths, pos_label, neg_label, train_filepath, valid_filepath):
+    with open(train_filepath, "a") as output:
+        num_pos_examples = 0
+        for filepath in pos_warc_filepaths:
+            print(f"Processing Positive: {filepath}")
+            with gzip.open(filepath, 'rb') as stream:
+                archive_iterator = ArchiveIterator(stream)
+                for record in tqdm(archive_iterator):
+
+                    if record.headers.get('WARC-Type') == 'response':  # Consider only 'response' records
+                        content = record.reader.read()
+                        text = extract_text_from_html_bytes(content)
+                        if is_gopher_quality(text) and identify_language(text)[0] == "en":
+                            text = text.replace("\n", " ").replace("\r", "")
+                            output.write(f"{pos_label} {text}\n")
+                            num_pos_examples += 1
+
+                            if num_pos_examples % 1000 == 0:
+                                print(f"Num_Pos_Examples: {num_pos_examples}")
+
+        for filepath in neg_warc_filepaths:
+            print(f"Processing Negative: {filepath}")
+            with gzip.open(filepath, 'rb') as stream:
+                archive_iterator = ArchiveIterator(stream)
+                for record in tqdm(archive_iterator):
+
+                    if record.headers.get('WARC-Type') == 'response':  # Consider only 'response' records
+                        content = record.reader.read()
+                        text = extract_text_from_html_bytes(content)
+                        if is_gopher_quality(text) and identify_language(text)[0] == "en":
+                            text = text.replace("\n", " ").replace("\r", "")
+                            output.write(f"{neg_label} {text}\n")
+                            num_pos_examples -= 1
+
+                            if num_pos_examples % 1000 == 0:
+                                print(f"Num_Pos_Examples: {num_pos_examples}")
+
+                            if num_pos_examples <= 0:
+                                return
+
 
 def train_model(train_filepath, valid_filepath, save_path):
     model = fasttext.train_supervised(input=train_filepath, epoch=25, lr=1.0, wordNgrams=4, verbose=2, minCount=1)
@@ -102,7 +147,7 @@ def get_warc_files(directory):
     warc_files = []
     for root, dirs, files in os.walk(directory):
         for file in files:
-            if file.endswith('.warc.filtered.gz'):
+            if file.endswith('.gz'):
                 warc_files.append(os.path.join(root, file))
     return warc_files
 
@@ -137,6 +182,8 @@ if __name__ == "__main__":
 
         pos_filepaths = get_warc_files("/home/c-mattreed/language-model-data/warcs")
         neg_filepaths = get_warc_files(WARC_DIR)
+
+        random.shuffle(neg_filepaths)
 
         create_fasttext_dataset(pos_filepaths, neg_filepaths, "__label__wiki", "__label__cc", train_path, valid_path)
     elif args.train_model:

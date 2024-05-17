@@ -78,45 +78,59 @@ def log(message):
     logging.info(f"{pid}: {message}")
 
 
-def process_warc_file(filename):
+def process_warc_file(filename, output_queue):
 
     base_name = os.path.basename(filename).replace(".warc.filtered.gz", ".txt")
-    new_file_path = os.path.join(DATA_DIR, base_name)
 
-    log(f"Populating {base_name}")
+    log(f"Reading from {base_name}")
 
-    with open(new_file_path, "a") as output:
+    with gzip.open(filename, 'rb') as stream:
+        archive_iterator = ArchiveIterator(stream)
+        
+        for record in archive_iterator:
+            if record.headers.get('WARC-Type') == 'response':
+                content = record.reader.read()
+                text = extract_text_from_html_bytes(content)
 
-        with gzip.open(filename, 'rb') as stream:
-            archive_iterator = ArchiveIterator(stream)
-            
-            for record in archive_iterator:
-                if record.headers.get('WARC-Type') == 'response':
-                    content = record.reader.read()
-                    text = extract_text_from_html_bytes(content)
+                if detect_toxic(text)[0] == "toxic":
+                    continue
 
-                    if detect_toxic(text)[0] == "toxic":
-                        continue
+                if detect_quality(text)[0] == "cc":
+                    continue
 
-                    if detect_quality(text)[0] == "cc":
-                        continue
+                text, _ = mask_emails(text)
+                text, _ = mask_ip_addresses(text)
+                text, _ = mask_phone_numbers(text)
 
-                    text, _ = mask_emails(text)
-                    text, _ = mask_ip_addresses(text)
-                    text, _ = mask_phone_numbers(text)
+                output_text = text + "\n<|endoftext|>\n"
 
-                    output.write(text)
-                    output.write("\n<|endoftext|>\n")
+                output_queue.put(output_text)
 
-
+def file_writer(queue, file_path):
+    with open(file_path, 'a') as f:
+        while True:
+            message = queue.get()
+            if message == "STOP":
+                break
+            f.write(message)
+            f.flush()
 
 
 def main():
     warc_files = get_warc_files(WARC_DIR)
     setup_logging()
+
+    output_queue = multiprocessing.Queue()
+    output_file_path = '/home/c-mattreed/language-model-data/filtered_data/raw.txt'
+    
+    writer_process = multiprocessing.Process(target=file_writer, args=(output_queue, output_file_path))
+    writer_process.start()
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        executor.map(process_warc_file, warc_files)
+        executor.map(lambda filename: process_warc_file(filename, output_queue), warc_files)
+
+    output_queue.put("STOP")
+    writer_process.join()
 
 if __name__ == '__main__':
     main()
