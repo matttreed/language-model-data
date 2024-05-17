@@ -11,6 +11,8 @@ import os
 import nltk
 import hashlib
 import mmh3
+import unicodedata
+import random
 nltk.download('punkt')
 
 EMAIL_MASK = "|||EMAIL_ADDRESS|||"
@@ -128,10 +130,37 @@ def exact_dedup(filepaths, output_dir):
             file.writelines(unique_lines)
 
 def get_ngrams(text, n):
-    return [text[i:i+n] for i in range(len(text) - n + 1)]
+    words = nltk.word_tokenize(text)
+    return [" ".join(words[i:i+n]) for i in range(len(words) - n + 1)]
 
 def hash_ngram(ngram, seed):
     return mmh3.hash(ngram, seed=seed)
+
+def normalize_text(text):
+    text = text.lower() # Lowercase the text
+    text = unicodedata.normalize('NFD', text) # Normalize unicode characters to NFD (Normalization Form Decomposition)
+    text = ''.join([char for char in text if not unicodedata.combining(char)]) # Remove accents (combining characters)
+    text = re.sub(r'[^\w\s]', '', text) # Remove punctuation
+    text = re.sub(r'\s+', ' ', text).strip() # Normalize whitespaces
+    
+    return text
+
+def estimate_jaccard(signature1, signature2):
+    matches = sum(1 for i in range(len(signature1)) if signature1[i] == signature2[i])
+    return matches / len(signature1)
+
+def merge_clusters(clusters):
+    merged = []
+    for new_set in clusters:
+        found = False
+        for idx, existing_set in enumerate(merged):
+            if not set(new_set).isdisjoint(existing_set):  # Check if sets overlap
+                merged[idx] = existing_set.union(new_set)
+                found = True
+                break
+        if not found:
+            merged.append(set(new_set))
+    return merged
 
 def minhash_dedup(
         input_files: list[os.PathLike],
@@ -145,27 +174,49 @@ def minhash_dedup(
 
     for file_path in input_files:
         with open(file_path, 'r', encoding='utf-8') as file:
-            text = file.read()
+            text = normalize_text(file.read())
             text_ngrams = get_ngrams(text, ngrams)
+            # print(text_ngrams)
             signature = [min(hash_ngram(ngram, i) for ngram in text_ngrams) for i in range(num_hashes)]
             signatures[file_path] = signature
-    print(signatures)
     
-    return 
+    bucket_size = num_hashes // num_bands
+    clusters = []
+    for bucket in range(num_bands):
+        bucket_signatures = {}
+        for file_path, signature in signatures.items():
+            band = tuple(signature[bucket * bucket_size: (bucket + 1) * bucket_size])
+            if band in bucket_signatures:
+                bucket_signatures[band].append(file_path)
+            else:
+                bucket_signatures[band] = [file_path]
+        for filepaths in bucket_signatures.values():
+            if len(filepaths) > 1:
+                for i, a in enumerate(filepaths):
+                    for j, b in enumerate(filepaths[i+1:]):
+                        sig_a = signatures[a]
+                        sig_b = signatures[b]
+                        if estimate_jaccard(sig_a, sig_b) > jaccard_threshold:
+                            clusters.append(set([a,b]))
+
+    merged = merge_clusters(clusters)
+
+    for cluster in merged:
+        keep_file = random.choice(list(cluster))
+        files_to_delete = cluster - {keep_file}
+        for file_to_delete in files_to_delete:
+            input_files.remove(file_to_delete)
 
     for file_path in input_files:
-        unique_lines = []
-        with open(file_path, 'r', encoding='utf-8') as file:
-            for line in file:
-                line_hash = hash_line(line)
-                if line_count[line_hash] == 1:
-                    unique_lines.append(line)
 
-        file_name = os.path.basename(file_path)
-        new_file_path = os.path.join(output_directory, file_name)
+        with open(file_path, 'r', encoding='utf-8') as file_read:
+            
 
-        with open(new_file_path, 'w', encoding='utf-8') as file:
-            file.writelines(unique_lines)
+            file_name = os.path.basename(file_path)
+            new_file_path = os.path.join(output_directory, file_name)
+
+            with open(new_file_path, 'w', encoding='utf-8') as file:
+                file.write(file_read.read())
 
 if __name__ == "__main__":
     pass
