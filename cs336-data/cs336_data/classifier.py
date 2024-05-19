@@ -111,7 +111,7 @@ def create_fasttext_dataset(pos_warc_filepaths, neg_warc_filepaths, pos_label, n
                             output.write(f"{pos_label} {text}\n")
                             num_pos_examples += 1
 
-                            if num_pos_examples % 1000 == 0:
+                            if num_pos_examples % 500 == 0:
                                 print(f"Num_Pos_Examples: {num_pos_examples}")
 
         for filepath in neg_warc_filepaths:
@@ -128,15 +128,29 @@ def create_fasttext_dataset(pos_warc_filepaths, neg_warc_filepaths, pos_label, n
                             output.write(f"{neg_label} {text}\n")
                             num_pos_examples -= 1
 
-                            if num_pos_examples % 1000 == 0:
+                            if num_pos_examples % 500 == 0:
                                 print(f"Num_Pos_Examples: {num_pos_examples}")
 
                             if num_pos_examples <= 0:
                                 return
 
+def shuffle_dataset(train_pathname, output_filename):
+    # 42864
+    # 21432
+    # 21432
+    with open(train_pathname, "r") as input_file:
+        lines = input_file.readlines()
+        pos_lines = [line for line in lines if "__label__cc" in line]
+        neg_lines = [line for line in lines if "__label__wiki" in line]
+    
+    with open(output_filename, "w") as output_file:
+        for pos, neg in zip(pos_lines, neg_lines):
+            output_file.write(pos)
+            output_file.write(neg)
 
 def train_model(train_filepath, valid_filepath, save_path):
-    model = fasttext.train_supervised(input=train_filepath, epoch=25, lr=1.0, wordNgrams=4, verbose=2, minCount=1)
+    # model = fasttext.train_supervised(input=train_filepath, epoch=25, lr=1.0, wordNgrams=4, verbose=2, minCount=1)
+    model = fasttext.train_supervised(input=train_filepath)
     model.save_model(save_path)
     result = model.test(path=valid_filepath)
     print(f"Number of examples: {result[0]}")
@@ -156,6 +170,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='For creating data and training quality classifier')
     parser.add_argument('--choose_urls', action="store_true", help='Subsamples Wikipedia URLs')
     parser.add_argument('--create_dataset', action="store_true", help='currate fasttext dataset')
+    parser.add_argument('--shuffle_dataset', action="store_true", help='shuffle file')
     parser.add_argument('--train_model', action="store_true", help='train fasttext dataset')
     parser.add_argument('--samples', type=int, help='Number of Samples')
     parser.add_argument('--num_files', type=int, default=1, help='Number of Files')
@@ -186,8 +201,12 @@ if __name__ == "__main__":
         random.shuffle(neg_filepaths)
 
         create_fasttext_dataset(pos_filepaths, neg_filepaths, "__label__wiki", "__label__cc", train_path, valid_path)
-    elif args.train_model:
+    elif args.shuffle_dataset:
         train_path = os.path.join(curr_dir, f'classifier/data.train')
+        output_path = os.path.join(curr_dir, f'classifier/data_shuffled.train')
+        shuffle_dataset(train_path, output_path)
+    elif args.train_model:
+        train_path = os.path.join(curr_dir, f'classifier/data_shuffled.train')
         valid_path = os.path.join(curr_dir, f'classifier/data.valid')
         save_path = os.path.join(curr_dir, "classifier/model.bin")
         train_model(train_path, valid_path, save_path)

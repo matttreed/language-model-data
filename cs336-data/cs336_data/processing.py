@@ -1,6 +1,7 @@
 from resiliparse.extract.html2text import extract_plain_text
 from resiliparse.parse.encoding import detect_encoding
 # from cs336_data.common_crawl import sample_warc_records
+import timeit
 import fasttext
 import re
 # from warcio.archiveiterator import ArchiveIterator
@@ -94,6 +95,23 @@ def is_gopher_quality(text: str):
     # return num_words, mean_word_len, ellipsis, alphabetic
     return num_words and mean_word_len and ellipsis and alphabetic
 
+def is_custom_gopher_quality(text: str):
+    words = nltk.word_tokenize(text)
+    len_words = len(words)
+    avg_word_len = sum(len(word) for word in words) / len_words if len_words else 0
+    lines = nltk.line_tokenize(text)
+    num_lines = len(lines)
+    proportion_end_ellipsis = sum(1 for line in lines if line.endswith("...")) / num_lines if num_lines else 1
+    proportion_alphabetic = sum(1 for word in words if any(char.isalpha() for char in word)) / len_words if len_words else 0
+
+    num_words = len_words >= 50 and len_words <= 100000
+    mean_word_len = avg_word_len >= 3 and avg_word_len <= 10
+    ellipsis = proportion_end_ellipsis < 0.3
+    alphabetic = proportion_alphabetic > 0.8
+
+    # return num_words, mean_word_len, ellipsis, alphabetic
+    return num_words and mean_word_len and ellipsis and alphabetic
+
 def detect_quality(text: str):
     predictions = quality_model.predict(text.replace("\n", " "))
     quality_code = predictions[0][0].replace("__label__", "")
@@ -144,6 +162,11 @@ def normalize_text(text):
     text = re.sub(r'\s+', ' ', text).strip() # Normalize whitespaces
     
     return text
+
+def custom_filter(text: str):
+    text = text.replace("\n\n", "\n")
+    lines = [line for line in text.split("\n") if len(line) > 50]
+    return "\n".join(lines)
 
 def estimate_jaccard(signature1, signature2):
     matches = sum(1 for i in range(len(signature1)) if signature1[i] == signature2[i])
@@ -218,8 +241,26 @@ def minhash_dedup(
             with open(new_file_path, 'w', encoding='utf-8') as file:
                 file.write(file_read.read())
 
+def wrapper(func, *args, **kwargs):
+    def wrapped():
+        return func(*args, **kwargs)
+    return wrapped
+
 if __name__ == "__main__":
-    pass
+    with open("test.txt") as file:
+        text = file.read()
+
+    wrapped_is_gopher_quality = wrapper(is_gopher_quality, text)
+    wrapped_detect_quality = wrapper(detect_quality, text)
+    wrapped_identify_language = wrapper(identify_language, text)
+    wrapped_detect_toxic = wrapper(detect_toxic, text)
+    wrapped_mask = wrapper(mask_phone_numbers, text)
+
+    print("is_gopher_quality:", timeit.timeit(wrapped_is_gopher_quality, number=100))
+    print("detect_quality:", timeit.timeit(wrapped_detect_quality, number=100))
+    print("identify_language:", timeit.timeit(wrapped_identify_language, number=100))
+    print("toxic:", timeit.timeit(wrapped_detect_toxic, number=100))
+    print("mask:", timeit.timeit(wrapped_mask, number=100))
     # test_texts = [
     #     "This is a normal statement. that im interjecting with sex",
     #     "You are an idiot. maybe",
@@ -248,18 +289,18 @@ if __name__ == "__main__":
     #     language, confidence = identify_language(text)
     #     print(i, language, confidence, text[:100])
 
-    with gzip.open(WARC_FILE_PATH, 'rb') as stream:
+    # with gzip.open(WARC_FILE_PATH, 'rb') as stream:
         # Create an ArchiveIterator
-        archive_iterator = ArchiveIterator(stream)
+        # archive_iterator = ArchiveIterator(stream)
         
         # Collect all records into a list
-        total = 0
-        toxic = 0
-        nsfw = 0
-        both = 0
-        for record in archive_iterator:
-            if record.headers.get('WARC-Type') == 'response':  # Consider only 'response' records
-                content = record.reader.read()
+        # total = 0
+        # toxic = 0
+        # nsfw = 0
+        # both = 0
+        # for record in archive_iterator:
+        #     if record.headers.get('WARC-Type') == 'response':  # Consider only 'response' records
+        #         content = record.reader.read()
                 # original_text = extract_text_from_html_bytes(content)
                 # text, num_emails = mask_emails(original_text)
                 # text, num_phone_numbers = mask_phone_numbers(text)
@@ -271,18 +312,18 @@ if __name__ == "__main__":
                 #     print("FOUND: ", original_text[index:index+50])
                 #     print("POUND: ", text[index:index+50])
                 #     input()
-                original_text = extract_text_from_html_bytes(content)
+                # original_text = extract_text_from_html_bytes(content)
                 # nsfw_label, nsfw_conf = detect_nsfw(original_text)
                 # toxic_label, toxic_conf = detect_toxic(original_text)
-                quality_label, quality_conf = detect_quality(original_text)
+                # quality_label, quality_conf = detect_quality(original_text)
 
 
-                total += 1
+                # total += 1
 
-                if quality_label == "wiki":
-                    print(original_text)
-                    print(total, quality_label, quality_conf)
-                    input()
+                # if quality_label == "wiki":
+                #     print(original_text)
+                #     print(total, quality_label, quality_conf)
+                #     input()
                 # if nsfw_label == "nsfw":
                 #     nsfw += 1
                 # if toxic_label == "toxic":
