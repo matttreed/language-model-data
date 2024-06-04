@@ -37,4 +37,5 @@ torchrun --standalone --nproc_per_node=2 /home/c-mattreed/language-model-data/cs
 --grad-clip 1.0 \
 --dtype bfloat16 \
 --wandb-project cs336-data \
---compile
+	 --compile \
+	 --device cuda
